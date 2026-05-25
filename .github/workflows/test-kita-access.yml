@@ -1,0 +1,30 @@
+name: Test KITA Access
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check KITA main page
+        run: |
+          echo "=== Testing KITA freight pages ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            "https://kita.net/shippers/logisticsFare/logisticsSeaFare.do")
+          echo "Sea fare page HTTP status: $STATUS"
+
+          STATUS2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            "https://kita.net/shippers/logisticsFare/logisticsAirFare.do")
+          echo "Air fare page HTTP status: $STATUS2"
+
+          STATUS3=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            "https://kita.net/shippers/logisticsFare/logisticsSeaCodeView.do")
+          echo "Sea code API HTTP status: $STATUS3"
+
+          echo ""
+          echo "=== Response body preview (Sea page) ==="
+          curl -s --max-time 15 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://kita.net/shippers/logisticsFare/logisticsSeaFare.do" \
+            | head -c 500 || echo "(no response or timeout)"
