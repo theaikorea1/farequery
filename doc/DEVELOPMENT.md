@@ -18,15 +18,15 @@
 
 ```
 [KITA 웹사이트]
-    ↓  kita_api_scraper.py (Python, 별도 프로젝트)
-[FareExtract/API_output/]
-    ↓  수동 복사
+    ↓  scraper/kita_api_scraper.py (Python, farequery/scraper/ 에 통합됨)
+[scraper/progress/]  ← 수집 중간 저장 (gitignore)
+    ↓  scraper/run_monthly.py (신규 월 감지 + 중복 제거 후 추가)
 [farequery/FareDB/]  ← Next.js 앱이 직접 읽는 CSV 파일
     ↓
 [Next.js 웹앱 (farequery)]  →  사용자 브라우저
 ```
 
-스크래퍼 프로젝트(`FareExtract`)는 별도이며, 이 문서는 **웹앱(farequery)** 구현만 다룹니다.
+**v2부터 자동화 파이프라인 통합 완료:** `scraper/` 폴더에 스크래퍼를 포함하고 GitHub Actions로 매월 자동 업데이트.
 
 ---
 
@@ -877,7 +877,7 @@ npx vercel --prod
 
 | 기능 | 설명 |
 |---|---|
-| FareDB 자동 갱신 | FareExtract 스크래퍼 실행 후 GitHub Actions로 FareDB CSV 자동 커밋 |
+| ~~FareDB 자동 갱신~~ | ~~v2에서 구현 완료~~ |
 | 데이터 캐싱 | `unstable_cache` 또는 모듈 레벨 캐시로 API 응답속도 개선 |
 | 엑셀 내보내기 | `xlsx` 패키지 활용해 조회 결과 다운로드 기능 |
 | 운임 비교 | 전월 대비 변동율(%) 계산 및 ▲▼ 표시 |
@@ -897,3 +897,59 @@ AI에게 이 프로젝트를 재현하도록 지시할 때 반드시 포함해�
 6. **Tailwind v4** → `tailwind.config.js` 없음, `@import "tailwindcss"` 방식
 7. **연쇄 드롭다운** → 분류 변경 시 region/city 초기화, 권역 변경 시 city 초기화
 8. **차트 데이터 정렬** → chart API는 오름차순(과거→현재), 일반 API는 내림차순(최신→과거)
+
+---
+
+## 12. 자동 월별 업데이트 파이프라인 (v2)
+
+### 구조
+
+```
+GitHub Actions (cron)
+  → scraper/run_monthly.py
+      → kita_api_scraper.KitaHtmlScraper (Playwright + requests)
+      → scraper/progress/*.csv (임시, gitignore)
+      → 신규 행 감지 + FareDB CSV 업데이트
+  → git commit & push (신규 행 있을 때만)
+  → Vercel 자동 재배포
+```
+
+### 핵심 파일
+
+| 파일 | 역할 |
+|------|------|
+| `scraper/kita_api_scraper.py` | 원본 스크래퍼 (경로만 레포 기준으로 수정) |
+| `scraper/run_monthly.py` | 진입점: 최신 월 감지 → 수집 → 중복 제거 → CSV 추가 |
+| `scraper/requirements.txt` | Python 의존성 (playwright, requests, bs4, openpyxl) |
+| `.github/workflows/update-faredb.yml` | GitHub Actions 스케줄 정의 |
+
+### 스케줄
+
+- **1차**: 매월 9일 08:00 KST (`0 23 8 * *` UTC)
+- **2차**: 매월 14일 08:00 KST (`0 23 13 * *` UTC) — KITA 미업로드 시 재시도
+- 2회 모두 시도 후에도 신규 없으면 그 달은 skip (무한 재시도 없음)
+
+### run_monthly.py 동작 원리
+
+1. `FareDB/kita_all_freight.csv`에서 최신 (년, 월) 자동 감지
+2. 해당 월부터 현재까지 KitaHtmlScraper 실행
+3. `scraper/progress/`에 수집 결과 저장
+4. 기존 CSV와 대조: `(분류, 출발도시, 도착도시, 년, 월)` 조합 중복 제거
+5. 신규 행이 있으면 CSV 덮어쓰기(기존+신규 병합), 없으면 `NO_NEW_DATA` 출력
+6. GitHub Actions가 `NO_NEW_DATA` 감지 시 commit 생략
+
+### 경로 설정 (kita_api_scraper.py 수정 부분)
+
+```python
+SCRIPT_DIR   = Path(__file__).resolve().parent   # scraper/
+REPO_ROOT    = SCRIPT_DIR.parent                 # farequery/
+OUTPUT_DIR   = REPO_ROOT / "FareDB"              # farequery/FareDB/
+PROGRESS_DIR = SCRIPT_DIR / "progress"           # scraper/progress/ (gitignore)
+```
+
+### 검증 결과 (2026-05-26)
+
+- KITA 해외 IP 접근: **허용 확인** (HTTP 200)
+- GitHub Actions 수동 트리거 실행: **성공 (4분 14초)**
+- 수집 행 수: 139행 (기존 DB와 중복 → NO_NEW_DATA, commit 없음)
+- 동작 방식 정상 확인
