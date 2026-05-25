@@ -33,6 +33,12 @@ export default function SearchForm({ meta, filter, onChange, onReset }: Props) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-gray-700">운임 검색</span>
+        <span className="text-xs text-gray-400">
+          데이터 기준: {meta.latestYearMonth.year}년 {parseInt(meta.latestYearMonth.month)}월
+        </span>
+      </div>
       <div className="flex flex-wrap gap-3 items-end">
         {/* 분류 */}
         <div className="flex flex-col gap-1">
